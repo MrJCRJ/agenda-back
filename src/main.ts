@@ -1,10 +1,16 @@
-// File: src/main.ts
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { ValidationPipe } from "@nestjs/common";
+import { Logger } from "@nestjs/common";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: ["log", "error", "warn", "debug", "verbose"],
+    bufferLogs: true,
+  });
+
+  // Crie uma nova instância do Logger em vez de tentar injetá-lo
+  const logger = new Logger("Bootstrap");
 
   app.enableCors({
     origin: true,
@@ -24,6 +30,6 @@ async function bootstrap() {
   );
 
   await app.listen(3000, "0.0.0.0");
-  console.log(`Application is running on: ${await app.getUrl()}`);
+  logger.log(`Application is running on: ${await app.getUrl()}`);
 }
 bootstrap();

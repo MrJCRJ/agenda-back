@@ -44,17 +44,19 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var AppointmentService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppointmentService = void 0;
-const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const mongoose = __importStar(require("mongoose"));
 const appointment_schema_1 = require("../schemas/appointment.schema");
 const rrule_1 = require("rrule");
-let AppointmentService = class AppointmentService {
+const common_1 = require("@nestjs/common");
+let AppointmentService = AppointmentService_1 = class AppointmentService {
     constructor(appointmentModel) {
         this.appointmentModel = appointmentModel;
+        this.logger = new common_1.Logger(AppointmentService_1.name);
     }
     async create(createAppointmentDto) {
         if (createAppointmentDto.isRecurring &&
@@ -143,28 +145,67 @@ let AppointmentService = class AppointmentService {
             .exec();
     }
     async updateTask(appointmentId, taskId, update) {
+        this.logger.debug(`Tentando atualizar tarefa - Appointment: ${appointmentId}, Task: ${taskId}`, { update });
+        if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+            this.logger.error(`ID de agendamento inválido: ${appointmentId}`);
+            throw new Error("ID de agendamento inválido");
+        }
+        if (!mongoose.Types.ObjectId.isValid(taskId)) {
+            this.logger.error(`ID de tarefa inválido: ${taskId}`);
+            throw new Error("ID de tarefa inválido");
+        }
         const updateObj = {};
         if (update.description !== undefined) {
-            updateObj["tasks.$.description"] = update.description;
+            updateObj["tasks.$[elem].description"] = update.description;
         }
         if (update.completed !== undefined) {
-            updateObj["tasks.$.completed"] = update.completed;
+            updateObj["tasks.$[elem].completed"] = update.completed;
         }
-        return this.appointmentModel
-            .findOneAndUpdate({
-            _id: appointmentId,
-            "tasks._id": new mongoose.Types.ObjectId(taskId),
-        }, { $set: updateObj }, { new: true })
-            .exec();
+        try {
+            const result = await this.appointmentModel
+                .findOneAndUpdate({
+                _id: new mongoose.Types.ObjectId(appointmentId),
+                "tasks._id": new mongoose.Types.ObjectId(taskId),
+            }, {
+                $set: updateObj,
+            }, {
+                new: true,
+                arrayFilters: [{ "elem._id": new mongoose.Types.ObjectId(taskId) }],
+            })
+                .exec();
+            if (!result) {
+                this.logger.warn(`Tarefa não encontrada - Appointment: ${appointmentId}, Task: ${taskId}`);
+                throw new Error("Agendamento ou tarefa não encontrado");
+            }
+            this.logger.log(`Tarefa atualizada com sucesso - Appointment: ${appointmentId}, Task: ${taskId}`);
+            return result;
+        }
+        catch (error) {
+            this.logger.error(`Falha ao atualizar tarefa - Appointment: ${appointmentId}, Task: ${taskId}`, error);
+            throw new Error(`Falha ao atualizar tarefa: ${error}`);
+        }
     }
     async removeTask(appointmentId, taskId) {
-        return this.appointmentModel
-            .findByIdAndUpdate(appointmentId, { $pull: { tasks: { _id: new mongoose.Types.ObjectId(taskId) } } }, { new: true })
-            .exec();
+        this.logger.debug(`Tentando remover tarefa - Appointment: ${appointmentId}, Task: ${taskId}`);
+        try {
+            const result = await this.appointmentModel
+                .findByIdAndUpdate(appointmentId, { $pull: { tasks: { _id: new mongoose.Types.ObjectId(taskId) } } }, { new: true })
+                .exec();
+            if (!result) {
+                this.logger.warn(`Tarefa não encontrada para remoção - Appointment: ${appointmentId}, Task: ${taskId}`);
+                return null;
+            }
+            this.logger.log(`Tarefa removida com sucesso - Appointment: ${appointmentId}, Task: ${taskId}`);
+            return result;
+        }
+        catch (error) {
+            this.logger.error(`Falha ao remover tarefa - Appointment: ${appointmentId}, Task: ${taskId}`, error);
+            throw error;
+        }
     }
 };
 exports.AppointmentService = AppointmentService;
-exports.AppointmentService = AppointmentService = __decorate([
+exports.AppointmentService = AppointmentService = AppointmentService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(appointment_schema_1.Appointment.name)),
     __metadata("design:paramtypes", [mongoose_2.Model])

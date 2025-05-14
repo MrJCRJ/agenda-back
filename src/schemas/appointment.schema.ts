@@ -1,18 +1,9 @@
-// appointment.schema.ts
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Document, Types } from "mongoose";
 
 export type AppointmentDocument = Appointment & Document;
 
-class Task {
-  @Prop({ required: true })
-  description!: string;
-
-  @Prop({ default: false })
-  completed!: boolean;
-}
-
-@Schema()
+@Schema({ timestamps: true })
 export class Appointment {
   @Prop({ required: true })
   title!: string;
@@ -23,25 +14,33 @@ export class Appointment {
   @Prop({ required: true })
   end!: string;
 
-  @Prop({ default: Date.now })
-  createdAt?: Date;
-
-  // Campos para recorrência
   @Prop({ default: false })
   isRecurring!: boolean;
 
   @Prop()
-  recurrenceRule?: string; // Poderia ser uma string no formato RRULE (RFC 5545)
+  recurrenceRule?: string;
 
   @Prop()
-  recurrenceId?: string; // Para agrupamento de eventos recorrentes
+  recurrenceId?: string;
 
   @Prop()
-  originalStart?: string; // Para eventos recorrentes modificados
+  originalStart?: string;
 
-  // Lista de tarefas
-  @Prop({ type: [Task], default: [] })
-  tasks!: Task[];
+  @Prop({
+    type: [
+      {
+        _id: { type: Types.ObjectId, auto: true },
+        description: { type: String, required: true },
+        completed: { type: Boolean, default: false },
+      },
+    ],
+    default: [],
+  })
+  tasks!: Array<{
+    _id?: Types.ObjectId;
+    description: string;
+    completed: boolean;
+  }>;
 }
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);

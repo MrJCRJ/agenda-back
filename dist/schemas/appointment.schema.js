@@ -11,16 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppointmentSchema = exports.Appointment = void 0;
 const mongoose_1 = require("@nestjs/mongoose");
-class Task {
-}
-__decorate([
-    (0, mongoose_1.Prop)({ required: true }),
-    __metadata("design:type", String)
-], Task.prototype, "description", void 0);
-__decorate([
-    (0, mongoose_1.Prop)({ default: false }),
-    __metadata("design:type", Boolean)
-], Task.prototype, "completed", void 0);
+const mongoose_2 = require("mongoose");
 let Appointment = class Appointment {
 };
 exports.Appointment = Appointment;
@@ -36,10 +27,6 @@ __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], Appointment.prototype, "end", void 0);
-__decorate([
-    (0, mongoose_1.Prop)({ default: Date.now }),
-    __metadata("design:type", Date)
-], Appointment.prototype, "createdAt", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: false }),
     __metadata("design:type", Boolean)
@@ -57,11 +44,20 @@ __decorate([
     __metadata("design:type", String)
 ], Appointment.prototype, "originalStart", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ type: [Task], default: [] }),
+    (0, mongoose_1.Prop)({
+        type: [
+            {
+                _id: { type: mongoose_2.Types.ObjectId, auto: true },
+                description: { type: String, required: true },
+                completed: { type: Boolean, default: false },
+            },
+        ],
+        default: [],
+    }),
     __metadata("design:type", Array)
 ], Appointment.prototype, "tasks", void 0);
 exports.Appointment = Appointment = __decorate([
-    (0, mongoose_1.Schema)()
+    (0, mongoose_1.Schema)({ timestamps: true })
 ], Appointment);
 exports.AppointmentSchema = mongoose_1.SchemaFactory.createForClass(Appointment);
 //# sourceMappingURL=appointment.schema.js.map

@@ -1,19 +1,18 @@
 import { Document, Types } from "mongoose";
 export type AppointmentDocument = Appointment & Document;
-declare class Task {
-    description: string;
-    completed: boolean;
-}
 export declare class Appointment {
     title: string;
     start: string;
     end: string;
-    createdAt?: Date;
     isRecurring: boolean;
     recurrenceRule?: string;
     recurrenceId?: string;
     originalStart?: string;
-    tasks: Task[];
+    tasks: Array<{
+        _id?: Types.ObjectId;
+        description: string;
+        completed: boolean;
+    }>;
 }
 export declare const AppointmentSchema: import("mongoose").Schema<Appointment, import("mongoose").Model<Appointment, any, any, any, Document<unknown, any, Appointment> & Appointment & {
     _id: Types.ObjectId;
@@ -24,4 +23,3 @@ export declare const AppointmentSchema: import("mongoose").Schema<Appointment, i
 } & {
     __v: number;
 }>;
-export {};

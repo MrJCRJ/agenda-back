@@ -4,6 +4,7 @@ import { CreateAppointmentDto } from "../dto/create-appointment.dto";
 import { UpdateAppointmentDto } from "../dto/update-appointment.dto";
 export declare class AppointmentService {
     private appointmentModel;
+    private readonly logger;
     constructor(appointmentModel: Model<AppointmentDocument>);
     create(createAppointmentDto: CreateAppointmentDto): Promise<Appointment>;
     private createRecurringAppointments;

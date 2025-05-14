@@ -1,5 +1,4 @@
 // appointment.service.ts
-import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import * as mongoose from "mongoose";
@@ -10,9 +9,12 @@ import {
 import { CreateAppointmentDto } from "../dto/create-appointment.dto";
 import { UpdateAppointmentDto } from "../dto/update-appointment.dto";
 import { RRule } from "rrule";
+import { Injectable, Logger } from "@nestjs/common";
 
 @Injectable()
 export class AppointmentService {
+  private readonly logger = new Logger(AppointmentService.name);
+
   constructor(
     @InjectModel(Appointment.name)
     private appointmentModel: Model<AppointmentDocument>
@@ -212,36 +214,104 @@ export class AppointmentService {
     taskId: string,
     update: { description?: string; completed?: boolean }
   ): Promise<Appointment | null> {
-    const updateObj: any = {};
-    if (update.description !== undefined) {
-      updateObj["tasks.$.description"] = update.description;
-    }
-    if (update.completed !== undefined) {
-      updateObj["tasks.$.completed"] = update.completed;
+    this.logger.debug(
+      `Tentando atualizar tarefa - Appointment: ${appointmentId}, Task: ${taskId}`,
+      { update }
+    );
+
+    // Verificar se os IDs são válidos
+    if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+      this.logger.error(`ID de agendamento inválido: ${appointmentId}`);
+      throw new Error("ID de agendamento inválido");
     }
 
-    return this.appointmentModel
-      .findOneAndUpdate(
-        {
-          _id: appointmentId,
-          "tasks._id": new mongoose.Types.ObjectId(taskId),
-        },
-        { $set: updateObj },
-        { new: true }
-      )
-      .exec();
+    if (!mongoose.Types.ObjectId.isValid(taskId)) {
+      this.logger.error(`ID de tarefa inválido: ${taskId}`);
+      throw new Error("ID de tarefa inválido");
+    }
+
+    // Criar objeto de atualização dinâmico
+    const updateObj: Record<string, any> = {};
+
+    if (update.description !== undefined) {
+      updateObj["tasks.$[elem].description"] = update.description;
+    }
+
+    if (update.completed !== undefined) {
+      updateObj["tasks.$[elem].completed"] = update.completed;
+    }
+
+    try {
+      const result = await this.appointmentModel
+        .findOneAndUpdate(
+          {
+            _id: new mongoose.Types.ObjectId(appointmentId),
+            "tasks._id": new mongoose.Types.ObjectId(taskId),
+          },
+          {
+            $set: updateObj,
+          },
+          {
+            new: true,
+            arrayFilters: [{ "elem._id": new mongoose.Types.ObjectId(taskId) }],
+          }
+        )
+        .exec();
+
+      if (!result) {
+        this.logger.warn(
+          `Tarefa não encontrada - Appointment: ${appointmentId}, Task: ${taskId}`
+        );
+        throw new Error("Agendamento ou tarefa não encontrado");
+      }
+
+      this.logger.log(
+        `Tarefa atualizada com sucesso - Appointment: ${appointmentId}, Task: ${taskId}`
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Falha ao atualizar tarefa - Appointment: ${appointmentId}, Task: ${taskId}`,
+        error
+      );
+      throw new Error(`Falha ao atualizar tarefa: ${error}`);
+    }
   }
 
   async removeTask(
     appointmentId: string,
     taskId: string
   ): Promise<Appointment | null> {
-    return this.appointmentModel
-      .findByIdAndUpdate(
-        appointmentId,
-        { $pull: { tasks: { _id: new mongoose.Types.ObjectId(taskId) } } },
-        { new: true }
-      )
-      .exec();
+    this.logger.debug(
+      `Tentando remover tarefa - Appointment: ${appointmentId}, Task: ${taskId}`
+    );
+
+    try {
+      const result = await this.appointmentModel
+        .findByIdAndUpdate(
+          appointmentId,
+          { $pull: { tasks: { _id: new mongoose.Types.ObjectId(taskId) } } },
+          { new: true }
+        )
+        .exec();
+
+      if (!result) {
+        this.logger.warn(
+          `Tarefa não encontrada para remoção - Appointment: ${appointmentId}, Task: ${taskId}`
+        );
+        return null;
+      }
+
+      this.logger.log(
+        `Tarefa removida com sucesso - Appointment: ${appointmentId}, Task: ${taskId}`
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Falha ao remover tarefa - Appointment: ${appointmentId}, Task: ${taskId}`,
+        error
+      );
+      throw error;
+    }
   }
 }

@@ -1,4 +1,3 @@
-// appointment.controller.ts
 import {
   Body,
   Controller,
@@ -8,11 +7,24 @@ import {
   Post,
   Put,
   NotFoundException,
+  Patch,
+  BadRequestException,
 } from "@nestjs/common";
 import { AppointmentService } from "../services/appointment.service";
 import { CreateAppointmentDto } from "../dto/create-appointment.dto";
 import { UpdateAppointmentDto } from "../dto/update-appointment.dto";
-import { Appointment } from "../schemas/appointment.schema";
+import {
+  Appointment,
+  AppointmentDocument,
+} from "../schemas/appointment.schema";
+import * as mongoose from "mongoose";
+
+// Definindo o tipo Task baseado no seu schema
+type Task = {
+  _id?: mongoose.Types.ObjectId;
+  description: string;
+  completed: boolean;
+};
 
 @Controller("appointments")
 export class AppointmentController {
@@ -63,34 +75,55 @@ export class AppointmentController {
     return { message: "Appointment deleted successfully" };
   }
 
-  // Endpoints para tarefas
   @Post(":id/tasks")
   async addTask(
     @Param("id") id: string,
     @Body() task: { description: string; completed?: boolean }
   ): Promise<Appointment> {
-    const appointment = await this.appointmentService.addTask(id, task);
+    const appointment = await this.appointmentService.addTask(id, {
+      ...task,
+      completed: task.completed || false,
+    });
     if (!appointment) {
       throw new NotFoundException("Appointment not found");
     }
     return appointment;
   }
 
-  @Put(":id/tasks/:taskId")
+  @Patch(":id/tasks/:taskId")
   async updateTask(
     @Param("id") id: string,
     @Param("taskId") taskId: string,
     @Body() update: { description?: string; completed?: boolean }
-  ): Promise<Appointment> {
+  ): Promise<Task> {
+    // Validação dos IDs
+    if (
+      !mongoose.Types.ObjectId.isValid(id) ||
+      !mongoose.Types.ObjectId.isValid(taskId)
+    ) {
+      throw new BadRequestException("Invalid ID format");
+    }
+
     const appointment = await this.appointmentService.updateTask(
       id,
       taskId,
       update
     );
+
     if (!appointment) {
-      throw new NotFoundException("Appointment or task not found");
+      throw new NotFoundException("Appointment not found");
     }
-    return appointment;
+
+    // Encontra a tarefa atualizada
+    const updatedTask = appointment.tasks.find(
+      (task) => task._id && task._id.toString() === taskId
+    );
+
+    if (!updatedTask) {
+      throw new NotFoundException("Task not found after update");
+    }
+
+    return updatedTask;
   }
 
   @Delete(":id/tasks/:taskId")
@@ -98,6 +131,13 @@ export class AppointmentController {
     @Param("id") id: string,
     @Param("taskId") taskId: string
   ): Promise<Appointment> {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new BadRequestException("Invalid appointment ID format");
+    }
+    if (!mongoose.Types.ObjectId.isValid(taskId)) {
+      throw new BadRequestException("Invalid task ID format");
+    }
+
     const appointment = await this.appointmentService.removeTask(id, taskId);
     if (!appointment) {
       throw new NotFoundException("Appointment or task not found");
