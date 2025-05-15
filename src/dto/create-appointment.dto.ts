@@ -9,7 +9,7 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 
-class TaskDto {
+export class TaskDto {
   @IsString()
   @IsNotEmpty()
   description!: string;

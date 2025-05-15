@@ -83,34 +83,31 @@ let AppointmentController = class AppointmentController {
         return { message: "Appointment deleted successfully" };
     }
     async addTask(id, task) {
-        const appointment = await this.appointmentService.addTask(id, Object.assign(Object.assign({}, task), { completed: task.completed || false }));
-        if (!appointment) {
-            throw new common_1.NotFoundException("Appointment not found");
+        try {
+            const appointment = await this.appointmentService.addTask(id, Object.assign(Object.assign({}, task), { completed: task.completed || false }));
+            if (!appointment) {
+                throw new common_1.NotFoundException("Appointment not found");
+            }
+            return appointment;
         }
-        return appointment;
+        catch (error) {
+            if (error instanceof Error) {
+                console.error(`[AddTask] Erro - ${error.message}`, error.stack);
+                throw new common_1.NotFoundException(error.message);
+            }
+            console.error("[AddTask] Erro desconhecido", error);
+            throw new common_1.NotFoundException("Ocorreu um erro inesperado");
+        }
     }
-    async updateTask(id, taskId, update) {
-        if (!mongoose.Types.ObjectId.isValid(id) ||
-            !mongoose.Types.ObjectId.isValid(taskId)) {
-            throw new common_1.BadRequestException("Invalid ID format");
-        }
-        const appointment = await this.appointmentService.updateTask(id, taskId, update);
-        if (!appointment) {
-            throw new common_1.NotFoundException("Appointment not found");
-        }
-        const updatedTask = appointment.tasks.find((task) => task._id && task._id.toString() === taskId);
-        if (!updatedTask) {
-            throw new common_1.NotFoundException("Task not found after update");
-        }
-        return updatedTask;
-    }
-    async removeTask(id, taskId) {
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            throw new common_1.BadRequestException("Invalid appointment ID format");
-        }
+    async updateTask(appointmentId, taskId, updateData) {
         if (!mongoose.Types.ObjectId.isValid(taskId)) {
             throw new common_1.BadRequestException("Invalid task ID format");
         }
+        return this.appointmentService.updateTask(appointmentId, taskId, {
+            completed: updateData.completed,
+        });
+    }
+    async removeTask(id, taskId) {
         const appointment = await this.appointmentService.removeTask(id, taskId);
         if (!appointment) {
             throw new common_1.NotFoundException("Appointment or task not found");
@@ -163,8 +160,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AppointmentController.prototype, "addTask", null);
 __decorate([
-    (0, common_1.Patch)(":id/tasks/:taskId"),
-    __param(0, (0, common_1.Param)("id")),
+    (0, common_1.Patch)(":appointmentId/tasks/:taskId"),
+    __param(0, (0, common_1.Param)("appointmentId")),
     __param(1, (0, common_1.Param)("taskId")),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),

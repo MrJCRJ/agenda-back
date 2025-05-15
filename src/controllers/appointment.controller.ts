@@ -80,50 +80,41 @@ export class AppointmentController {
     @Param("id") id: string,
     @Body() task: { description: string; completed?: boolean }
   ): Promise<Appointment> {
-    const appointment = await this.appointmentService.addTask(id, {
-      ...task,
-      completed: task.completed || false,
-    });
-    if (!appointment) {
-      throw new NotFoundException("Appointment not found");
+    try {
+      const appointment = await this.appointmentService.addTask(id, {
+        ...task,
+        completed: task.completed || false,
+      });
+      if (!appointment) {
+        throw new NotFoundException("Appointment not found");
+      }
+      return appointment;
+    } catch (error: unknown) {
+      // Adicione a tipagem como unknown
+      if (error instanceof Error) {
+        // Verificação de tipo
+        console.error(`[AddTask] Erro - ${error.message}`, error.stack);
+        throw new NotFoundException(error.message);
+      }
+      console.error("[AddTask] Erro desconhecido", error);
+      throw new NotFoundException("Ocorreu um erro inesperado");
     }
-    return appointment;
   }
 
-  @Patch(":id/tasks/:taskId")
+  @Patch(":appointmentId/tasks/:taskId")
   async updateTask(
-    @Param("id") id: string,
+    @Param("appointmentId") appointmentId: string,
     @Param("taskId") taskId: string,
-    @Body() update: { description?: string; completed?: boolean }
-  ): Promise<Task> {
-    // Validação dos IDs
-    if (
-      !mongoose.Types.ObjectId.isValid(id) ||
-      !mongoose.Types.ObjectId.isValid(taskId)
-    ) {
-      throw new BadRequestException("Invalid ID format");
+    @Body() updateData: { completed: boolean }
+  ) {
+    // Validação adicional
+    if (!mongoose.Types.ObjectId.isValid(taskId)) {
+      throw new BadRequestException("Invalid task ID format");
     }
 
-    const appointment = await this.appointmentService.updateTask(
-      id,
-      taskId,
-      update
-    );
-
-    if (!appointment) {
-      throw new NotFoundException("Appointment not found");
-    }
-
-    // Encontra a tarefa atualizada
-    const updatedTask = appointment.tasks.find(
-      (task) => task._id && task._id.toString() === taskId
-    );
-
-    if (!updatedTask) {
-      throw new NotFoundException("Task not found after update");
-    }
-
-    return updatedTask;
+    return this.appointmentService.updateTask(appointmentId, taskId, {
+      completed: updateData.completed,
+    });
   }
 
   @Delete(":id/tasks/:taskId")
@@ -131,13 +122,6 @@ export class AppointmentController {
     @Param("id") id: string,
     @Param("taskId") taskId: string
   ): Promise<Appointment> {
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      throw new BadRequestException("Invalid appointment ID format");
-    }
-    if (!mongoose.Types.ObjectId.isValid(taskId)) {
-      throw new BadRequestException("Invalid task ID format");
-    }
-
     const appointment = await this.appointmentService.removeTask(id, taskId);
     if (!appointment) {
       throw new NotFoundException("Appointment or task not found");

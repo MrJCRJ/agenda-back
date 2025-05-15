@@ -1,4 +1,4 @@
-declare class TaskDto {
+export declare class TaskDto {
     description: string;
     completed?: boolean;
 }
@@ -10,4 +10,3 @@ export declare class CreateAppointmentDto {
     recurrenceRule?: string;
     tasks?: TaskDto[];
 }
-export {};

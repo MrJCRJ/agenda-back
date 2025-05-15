@@ -1,13 +1,8 @@
 import { AppointmentService } from "../services/appointment.service";
 import { CreateAppointmentDto } from "../dto/create-appointment.dto";
 import { UpdateAppointmentDto } from "../dto/update-appointment.dto";
-import { Appointment } from "../schemas/appointment.schema";
+import { Appointment, AppointmentDocument } from "../schemas/appointment.schema";
 import * as mongoose from "mongoose";
-type Task = {
-    _id?: mongoose.Types.ObjectId;
-    description: string;
-    completed: boolean;
-};
 export declare class AppointmentController {
     private readonly appointmentService;
     constructor(appointmentService: AppointmentService);
@@ -22,10 +17,12 @@ export declare class AppointmentController {
         description: string;
         completed?: boolean;
     }): Promise<Appointment>;
-    updateTask(id: string, taskId: string, update: {
-        description?: string;
-        completed?: boolean;
-    }): Promise<Task>;
+    updateTask(appointmentId: string, taskId: string, updateData: {
+        completed: boolean;
+    }): Promise<mongoose.Document<unknown, {}, AppointmentDocument> & Appointment & mongoose.Document<unknown, any, any> & Required<{
+        _id: unknown;
+    }> & {
+        __v: number;
+    }>;
     removeTask(id: string, taskId: string): Promise<Appointment>;
 }
-export {};

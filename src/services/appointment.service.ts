@@ -1,15 +1,19 @@
 // appointment.service.ts
 import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
+import { Model, Types } from "mongoose";
 import * as mongoose from "mongoose";
 import {
   Appointment,
   AppointmentDocument,
 } from "../schemas/appointment.schema";
-import { CreateAppointmentDto } from "../dto/create-appointment.dto";
+import { CreateAppointmentDto, TaskDto } from "../dto/create-appointment.dto";
 import { UpdateAppointmentDto } from "../dto/update-appointment.dto";
 import { RRule } from "rrule";
 import { Injectable, Logger } from "@nestjs/common";
+
+type TaskCreate = Omit<TaskDto, "_id"> & {
+  completed?: boolean;
+};
 
 @Injectable()
 export class AppointmentService {
@@ -198,84 +202,68 @@ export class AppointmentService {
   // Métodos opcionais para tarefas
   async addTask(
     appointmentId: string,
-    task: { description: string; completed?: boolean }
-  ): Promise<Appointment | null> {
-    return this.appointmentModel
+    taskData: TaskCreate
+  ): Promise<Appointment> {
+    console.log(`[Service] AddTask iniciado - Appointment: ${appointmentId}`, {
+      taskData,
+      dbOperation: "findByIdAndUpdate",
+    });
+
+    const updatedAppointment = await this.appointmentModel
       .findByIdAndUpdate(
         appointmentId,
-        { $push: { tasks: { ...task, _id: new mongoose.Types.ObjectId() } } },
-        { new: true }
+        { $push: { tasks: taskData } },
+        { new: true, runValidators: true }
       )
       .exec();
+
+    if (!updatedAppointment) {
+      console.error(
+        `[Service] AddTask falhou - Appointment não encontrado: ${appointmentId}`
+      );
+      throw new Error("Appointment not found");
+    }
+
+    console.log(`[Service] AddTask concluído - Appointment: ${appointmentId}`, {
+      newTaskId: updatedAppointment.tasks.slice(-1)[0]._id,
+      taskCount: updatedAppointment.tasks.length,
+      dbResponse: {
+        status: "success",
+        modifiedCount: 1, // Para operações de update
+      },
+    });
+
+    return updatedAppointment;
   }
 
-  async updateTask(
-    appointmentId: string,
-    taskId: string,
-    update: { description?: string; completed?: boolean }
-  ): Promise<Appointment | null> {
-    this.logger.debug(
-      `Tentando atualizar tarefa - Appointment: ${appointmentId}, Task: ${taskId}`,
-      { update }
+  // appointment.service.ts
+  async updateTask(appointmentId: string, taskId: string, updateData: any) {
+    // VALIDAÇÃO CRÍTICA
+    if (appointmentId === taskId) {
+      throw new Error("Invalid task ID: cannot be same as appointment ID");
+    }
+    const appId = new Types.ObjectId(appointmentId);
+    const tId = new Types.ObjectId(taskId);
+
+    const updated = await this.appointmentModel.findOneAndUpdate(
+      {
+        _id: appId,
+        "tasks._id": tId,
+      },
+      {
+        $set: {
+          "tasks.$.completed": updateData.completed,
+          "tasks.$.updatedAt": new Date(),
+        },
+      },
+      { new: true }
     );
 
-    // Verificar se os IDs são válidos
-    if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
-      this.logger.error(`ID de agendamento inválido: ${appointmentId}`);
-      throw new Error("ID de agendamento inválido");
+    if (!updated) {
+      throw new Error("Task not found");
     }
 
-    if (!mongoose.Types.ObjectId.isValid(taskId)) {
-      this.logger.error(`ID de tarefa inválido: ${taskId}`);
-      throw new Error("ID de tarefa inválido");
-    }
-
-    // Criar objeto de atualização dinâmico
-    const updateObj: Record<string, any> = {};
-
-    if (update.description !== undefined) {
-      updateObj["tasks.$[elem].description"] = update.description;
-    }
-
-    if (update.completed !== undefined) {
-      updateObj["tasks.$[elem].completed"] = update.completed;
-    }
-
-    try {
-      const result = await this.appointmentModel
-        .findOneAndUpdate(
-          {
-            _id: new mongoose.Types.ObjectId(appointmentId),
-            "tasks._id": new mongoose.Types.ObjectId(taskId),
-          },
-          {
-            $set: updateObj,
-          },
-          {
-            new: true,
-            arrayFilters: [{ "elem._id": new mongoose.Types.ObjectId(taskId) }],
-          }
-        )
-        .exec();
-
-      if (!result) {
-        this.logger.warn(
-          `Tarefa não encontrada - Appointment: ${appointmentId}, Task: ${taskId}`
-        );
-        throw new Error("Agendamento ou tarefa não encontrado");
-      }
-
-      this.logger.log(
-        `Tarefa atualizada com sucesso - Appointment: ${appointmentId}, Task: ${taskId}`
-      );
-      return result;
-    } catch (error) {
-      this.logger.error(
-        `Falha ao atualizar tarefa - Appointment: ${appointmentId}, Task: ${taskId}`,
-        error
-      );
-      throw new Error(`Falha ao atualizar tarefa: ${error}`);
-    }
+    return updated;
   }
 
   async removeTask(
