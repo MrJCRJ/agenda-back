@@ -61,6 +61,9 @@ let AppointmentController = class AppointmentController {
     async findAll() {
         return this.appointmentService.findAll();
     }
+    async findAllGroupedByTitle(startDate, endDate) {
+        return this.appointmentService.findAllGroupedByTitle(startDate, endDate);
+    }
     async findOne(id) {
         const appointment = await this.appointmentService.findOne(id);
         if (!appointment) {
@@ -129,6 +132,14 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AppointmentController.prototype, "findAll", null);
+__decorate([
+    (0, common_1.Get)("grouped-by-title"),
+    __param(0, (0, common_1.Query)("startDate")),
+    __param(1, (0, common_1.Query)("endDate")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AppointmentController.prototype, "findAllGroupedByTitle", null);
 __decorate([
     (0, common_1.Get)(":id"),
     __param(0, (0, common_1.Param)("id")),

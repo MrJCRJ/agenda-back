@@ -51,7 +51,6 @@ const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const mongoose = __importStar(require("mongoose"));
 const appointment_schema_1 = require("../schemas/appointment.schema");
-const rrule_1 = require("rrule");
 const common_1 = require("@nestjs/common");
 let AppointmentService = AppointmentService_1 = class AppointmentService {
     constructor(appointmentModel) {
@@ -59,45 +58,89 @@ let AppointmentService = AppointmentService_1 = class AppointmentService {
         this.logger = new common_1.Logger(AppointmentService_1.name);
     }
     async create(createAppointmentDto) {
-        if (createAppointmentDto.isRecurring &&
-            createAppointmentDto.recurrenceRule) {
-            return this.createRecurringAppointments(createAppointmentDto);
-        }
         const createdAppointment = new this.appointmentModel(createAppointmentDto);
         return createdAppointment.save();
     }
-    async createRecurringAppointments(createAppointmentDto) {
-        const recurrenceId = new mongoose.Types.ObjectId().toString();
-        const firstAppointment = new this.appointmentModel(Object.assign(Object.assign({}, createAppointmentDto), { recurrenceId, originalStart: createAppointmentDto.start }));
-        await firstAppointment.save();
-        if (!createAppointmentDto.recurrenceRule) {
-            throw new Error("Recurrence rule is required for recurring appointments");
-        }
+    async findAll() {
+        const appointments = await this.appointmentModel.find().exec();
+        return appointments.map((appointment) => {
+            const startDate = new Date(appointment.start);
+            const endDate = new Date(appointment.end);
+            const duration = this.calculateDuration(startDate, endDate);
+            return Object.assign(Object.assign({}, appointment.toObject()), { duration });
+        });
+    }
+    async findAllGroupedByTitle(startDateFilter, endDateFilter) {
         try {
-            const rule = rrule_1.RRule.fromString(createAppointmentDto.recurrenceRule);
-            const dates = rule.all();
-            dates.shift();
-            for (const date of dates) {
-                const newAppointment = new this.appointmentModel(Object.assign(Object.assign({}, createAppointmentDto), { start: date.toISOString(), end: this.calculateEndDate(createAppointmentDto.start, createAppointmentDto.end, date), recurrenceId, originalStart: createAppointmentDto.start }));
-                await newAppointment.save();
+            const filter = {};
+            if (startDateFilter) {
+                filter.start = { $gte: startDateFilter };
             }
+            if (endDateFilter) {
+                filter.end = { $lte: endDateFilter };
+            }
+            const appointments = await this.appointmentModel.find(filter).exec();
+            if (appointments.length === 0) {
+                return [];
+            }
+            const groupedByTitle = appointments.reduce((acc, appointment) => {
+                const startDate = new Date(appointment.start);
+                const endDate = new Date(appointment.end);
+                const durationMs = endDate.getTime() - startDate.getTime();
+                const totalMinutes = Math.floor(durationMs / (1000 * 60));
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+                if (!acc[appointment.title]) {
+                    acc[appointment.title] = {
+                        title: appointment.title,
+                        totalDuration: {
+                            hours: 0,
+                            minutes: 0,
+                            totalMinutes: 0,
+                        },
+                        appointments: [],
+                    };
+                }
+                acc[appointment.title].totalDuration.hours += hours;
+                acc[appointment.title].totalDuration.minutes += minutes;
+                acc[appointment.title].totalDuration.totalMinutes += totalMinutes;
+                acc[appointment.title].appointments.push(appointment);
+                return acc;
+            }, {});
+            return Object.values(groupedByTitle).map((group) => {
+                const totalMinutes = group.totalDuration.totalMinutes;
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+                return {
+                    title: group.title,
+                    appointments: group.appointments,
+                    totalDuration: {
+                        hours,
+                        minutes,
+                        totalMinutes,
+                        formatted: `${hours > 0 ? `${hours}h ` : ""}${minutes}m`,
+                    },
+                };
+            });
         }
         catch (error) {
-            console.error("Error parsing recurrence rule:", error);
-            await this.appointmentModel.deleteOne({ _id: firstAppointment._id });
-            throw new Error("Invalid recurrence rule: " + error);
+            this.logger.error("Error in findAllGroupedByTitle", error);
+            throw error;
         }
-        return firstAppointment;
     }
-    calculateEndDate(originalStart, originalEnd, newStart) {
-        const startDate = new Date(originalStart);
-        const endDate = new Date(originalEnd);
-        const duration = endDate.getTime() - startDate.getTime();
-        const newEndDate = new Date(newStart.getTime() + duration);
-        return newEndDate.toISOString();
+    calculateDuration(start, end) {
+        const diffInMs = end.getTime() - start.getTime();
+        return {
+            hours: Math.floor(diffInMs / (1000 * 60 * 60)),
+            minutes: Math.floor((diffInMs % (1000 * 60 * 60)) / (1000 * 60)),
+            totalMinutes: Math.floor(diffInMs / (1000 * 60)),
+            formatted: this.formatDuration(diffInMs),
+        };
     }
-    async findAll() {
-        return this.appointmentModel.find().exec();
+    formatDuration(diffInMs) {
+        const hours = Math.floor(diffInMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffInMs % (1000 * 60 * 60)) / (1000 * 60));
+        return `${hours > 0 ? `${hours}h ` : ""}${minutes}m`;
     }
     async findOne(id) {
         if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -110,21 +153,9 @@ let AppointmentService = AppointmentService_1 = class AppointmentService {
         if (!appointment) {
             return null;
         }
-        if (appointment.recurrenceId && !updateAppointmentDto.originalStart) {
-            return this.handleRecurringUpdate(appointment, updateAppointmentDto);
-        }
         return this.appointmentModel
             .findByIdAndUpdate(id, updateAppointmentDto, { new: true })
             .exec();
-    }
-    async handleRecurringUpdate(originalAppointment, updateAppointmentDto) {
-        const modifiedAppointment = new this.appointmentModel(Object.assign(Object.assign(Object.assign({}, originalAppointment.toObject()), updateAppointmentDto), { originalStart: originalAppointment.start, recurrenceId: originalAppointment.recurrenceId, _id: undefined }));
-        await modifiedAppointment.save();
-        await this.appointmentModel.updateMany({
-            recurrenceId: originalAppointment.recurrenceId,
-            start: { $gt: originalAppointment.start },
-        }, { $set: { recurrenceId: undefined } });
-        return modifiedAppointment;
     }
     async delete(id) {
         const appointment = await this.appointmentModel.findById(id).exec();

@@ -8,12 +8,36 @@ import {
 } from "../schemas/appointment.schema";
 import { CreateAppointmentDto, TaskDto } from "../dto/create-appointment.dto";
 import { UpdateAppointmentDto } from "../dto/update-appointment.dto";
-import { RRule } from "rrule";
 import { Injectable, Logger } from "@nestjs/common";
 
 type TaskCreate = Omit<TaskDto, "_id"> & {
   completed?: boolean;
 };
+
+interface Duration {
+  hours: number;
+  minutes: number;
+  totalMinutes: number;
+}
+
+interface GroupedAppointment {
+  title: string;
+  totalDuration: Duration;
+  appointments: Appointment[];
+}
+
+interface AppointmentDuration {
+  hours: number;
+  minutes: number;
+  totalMinutes: number;
+  formatted: string;
+}
+
+export interface GroupedAppointmentsResponse {
+  title: string;
+  totalDuration: AppointmentDuration;
+  appointments: Appointment[];
+}
 
 @Injectable()
 export class AppointmentService {
@@ -27,83 +51,120 @@ export class AppointmentService {
   async create(
     createAppointmentDto: CreateAppointmentDto
   ): Promise<Appointment> {
-    if (
-      createAppointmentDto.isRecurring &&
-      createAppointmentDto.recurrenceRule
-    ) {
-      return this.createRecurringAppointments(createAppointmentDto);
-    }
-
     const createdAppointment = new this.appointmentModel(createAppointmentDto);
     return createdAppointment.save();
   }
 
-  private async createRecurringAppointments(
-    createAppointmentDto: CreateAppointmentDto
-  ): Promise<Appointment> {
-    const recurrenceId = new mongoose.Types.ObjectId().toString();
-
-    // Criar o primeiro evento da série
-    const firstAppointment = new this.appointmentModel({
-      ...createAppointmentDto,
-      recurrenceId,
-      originalStart: createAppointmentDto.start,
-    });
-
-    await firstAppointment.save();
-
-    // Verificar se recurrenceRule existe e é uma string válida
-    if (!createAppointmentDto.recurrenceRule) {
-      throw new Error("Recurrence rule is required for recurring appointments");
-    }
-
-    try {
-      // Parse a regra de recorrência
-      const rule = RRule.fromString(createAppointmentDto.recurrenceRule);
-      const dates = rule.all();
-
-      // Remover o primeiro evento (já criado)
-      dates.shift();
-
-      // Criar os demais eventos
-      for (const date of dates) {
-        const newAppointment = new this.appointmentModel({
-          ...createAppointmentDto,
-          start: date.toISOString(),
-          end: this.calculateEndDate(
-            createAppointmentDto.start,
-            createAppointmentDto.end,
-            date
-          ),
-          recurrenceId,
-          originalStart: createAppointmentDto.start,
-        });
-        await newAppointment.save();
-      }
-    } catch (error) {
-      console.error("Error parsing recurrence rule:", error);
-      // Se houver erro na regra de recorrência, deletar o primeiro evento criado
-      await this.appointmentModel.deleteOne({ _id: firstAppointment._id });
-      throw new Error("Invalid recurrence rule: " + error);
-    }
-
-    return firstAppointment;
-  }
-
-  private calculateEndDate(
-    originalStart: string,
-    originalEnd: string,
-    newStart: Date
-  ): string {
-    const startDate = new Date(originalStart);
-    const endDate = new Date(originalEnd);
-    const duration = endDate.getTime() - startDate.getTime();
-    const newEndDate = new Date(newStart.getTime() + duration);
-    return newEndDate.toISOString();
-  }
-
   async findAll(): Promise<Appointment[]> {
-    return this.appointmentModel.find().exec();
+    const appointments = await this.appointmentModel.find().exec();
+
+    return appointments.map((appointment) => {
+      // Convertendo strings para Date antes de calcular
+      const startDate = new Date(appointment.start);
+      const endDate = new Date(appointment.end);
+      const duration = this.calculateDuration(startDate, endDate);
+
+      return {
+        ...appointment.toObject(),
+        duration,
+      };
+    });
+  }
+
+  async findAllGroupedByTitle(
+    startDateFilter?: string,
+    endDateFilter?: string
+  ): Promise<GroupedAppointmentsResponse[]> {
+    try {
+      const filter: any = {};
+
+      // Adiciona filtros diretamente sem conversão
+      if (startDateFilter) {
+        filter.start = { $gte: startDateFilter };
+      }
+      if (endDateFilter) {
+        filter.end = { $lte: endDateFilter };
+      }
+
+      // Find appointments with filters
+      const appointments = await this.appointmentModel.find(filter).exec();
+
+      // Early return if no appointments found
+      if (appointments.length === 0) {
+        return [];
+      }
+
+      // Group by title
+      const groupedByTitle = appointments.reduce((acc, appointment) => {
+        const startDate = new Date(appointment.start);
+        const endDate = new Date(appointment.end);
+
+        // Calculate duration correctly
+        const durationMs = endDate.getTime() - startDate.getTime();
+        const totalMinutes = Math.floor(durationMs / (1000 * 60));
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+
+        if (!acc[appointment.title]) {
+          acc[appointment.title] = {
+            title: appointment.title,
+            totalDuration: {
+              hours: 0,
+              minutes: 0,
+              totalMinutes: 0,
+            },
+            appointments: [],
+          };
+        }
+
+        // Accumulate durations
+        acc[appointment.title].totalDuration.hours += hours;
+        acc[appointment.title].totalDuration.minutes += minutes;
+        acc[appointment.title].totalDuration.totalMinutes += totalMinutes;
+        acc[appointment.title].appointments.push(appointment);
+
+        return acc;
+      }, {} as Record<string, GroupedAppointment>);
+
+      // Convert to array and format output
+      return Object.values(groupedByTitle).map((group) => {
+        const totalMinutes = group.totalDuration.totalMinutes;
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+
+        return {
+          title: group.title,
+          appointments: group.appointments,
+          totalDuration: {
+            hours,
+            minutes,
+            totalMinutes,
+            formatted: `${hours > 0 ? `${hours}h ` : ""}${minutes}m`,
+          },
+        };
+      });
+    } catch (error) {
+      this.logger.error("Error in findAllGroupedByTitle", error);
+      throw error;
+    }
+  }
+
+  private calculateDuration(start: Date, end: Date) {
+    const diffInMs = end.getTime() - start.getTime();
+
+    return {
+      hours: Math.floor(diffInMs / (1000 * 60 * 60)),
+      minutes: Math.floor((diffInMs % (1000 * 60 * 60)) / (1000 * 60)),
+      totalMinutes: Math.floor(diffInMs / (1000 * 60)),
+      formatted: this.formatDuration(diffInMs),
+    };
+  }
+
+  private formatDuration(diffInMs: number): string {
+    const hours = Math.floor(diffInMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffInMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    return `${hours > 0 ? `${hours}h ` : ""}${minutes}m`;
   }
 
   async findOne(id: string): Promise<Appointment | null> {
@@ -123,40 +184,9 @@ export class AppointmentService {
       return null;
     }
 
-    if (appointment.recurrenceId && !updateAppointmentDto.originalStart) {
-      return this.handleRecurringUpdate(appointment, updateAppointmentDto);
-    }
-
     return this.appointmentModel
       .findByIdAndUpdate(id, updateAppointmentDto, { new: true })
       .exec();
-  }
-
-  private async handleRecurringUpdate(
-    originalAppointment: AppointmentDocument,
-    updateAppointmentDto: UpdateAppointmentDto
-  ): Promise<Appointment> {
-    // Criar um novo evento com as modificações
-    const modifiedAppointment = new this.appointmentModel({
-      ...originalAppointment.toObject(),
-      ...updateAppointmentDto,
-      originalStart: originalAppointment.start,
-      recurrenceId: originalAppointment.recurrenceId,
-      _id: undefined,
-    });
-
-    await modifiedAppointment.save();
-
-    // Atualizar eventos futuros para remover a recorrência
-    await this.appointmentModel.updateMany(
-      {
-        recurrenceId: originalAppointment.recurrenceId,
-        start: { $gt: originalAppointment.start },
-      },
-      { $set: { recurrenceId: undefined } }
-    );
-
-    return modifiedAppointment;
   }
 
   async delete(id: string): Promise<Appointment | null> {
@@ -180,20 +210,6 @@ export class AppointmentService {
       await this.appointmentModel.deleteOne({ _id: appointment._id });
 
       return modifiedAppointment;
-
-      // Opção 2: Descomente para deletar todos os eventos futuros da série
-      /*
-      await this.appointmentModel.deleteMany({
-        $or: [
-          { _id: appointment._id },
-          {
-            recurrenceId: appointment.recurrenceId,
-            start: { $gt: appointment.start }
-          }
-        ]
-      });
-      return appointment;
-      */
     }
 
     return this.appointmentModel.findByIdAndDelete(id).exec();

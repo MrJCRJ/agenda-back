@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Patch,
   BadRequestException,
+  Query,
 } from "@nestjs/common";
 import { AppointmentService } from "../services/appointment.service";
 import { CreateAppointmentDto } from "../dto/create-appointment.dto";
@@ -18,13 +19,6 @@ import {
   AppointmentDocument,
 } from "../schemas/appointment.schema";
 import * as mongoose from "mongoose";
-
-// Definindo o tipo Task baseado no seu schema
-type Task = {
-  _id?: mongoose.Types.ObjectId;
-  description: string;
-  completed: boolean;
-};
 
 @Controller("appointments")
 export class AppointmentController {
@@ -40,6 +34,14 @@ export class AppointmentController {
   @Get()
   async findAll(): Promise<Appointment[]> {
     return this.appointmentService.findAll();
+  }
+
+  @Get("grouped-by-title")
+  async findAllGroupedByTitle(
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string
+  ) {
+    return this.appointmentService.findAllGroupedByTitle(startDate, endDate);
   }
 
   @Get(":id")

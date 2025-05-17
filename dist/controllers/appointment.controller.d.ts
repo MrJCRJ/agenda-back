@@ -8,6 +8,7 @@ export declare class AppointmentController {
     constructor(appointmentService: AppointmentService);
     create(createAppointmentDto: CreateAppointmentDto): Promise<Appointment>;
     findAll(): Promise<Appointment[]>;
+    findAllGroupedByTitle(startDate?: string, endDate?: string): Promise<import("../services/appointment.service").GroupedAppointmentsResponse[]>;
     findOne(id: string): Promise<Appointment>;
     update(id: string, updateAppointmentDto: UpdateAppointmentDto): Promise<Appointment>;
     delete(id: string): Promise<{
